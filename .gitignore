@@ -1,0 +1,11 @@
+*.bat
+*.exe
+*.conf
+*.bin
+*.eep
+*.elf
+*.lst
+*.hex
+/_old/
+
+!picapot-controller-ht328.ino.hex

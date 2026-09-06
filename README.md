@@ -44,7 +44,7 @@ avrdude -c avrispmkii -p atmega328p -B 100 -v -U lfuse:w:0xEF:m -U hfuse:w:0xC7:
 The second command uploads the program to flash memory:
 
 ```console
-avrdude -c avrispmkii -p atmega328p -B 0.5 -v -U flash:w:picapot-controller-328.ino.hex:i
+avrdude -c avrispmkii -p atmega328p -B 0.5 -v -U flash:w:picapot-controller-ht328.ino.hex:i
 ```
 
 The programmer used in the commands above is the AVR ISP MKII (`avrispmkii`). If you are using a different programmer, update the programmer ID in the commands accordingly.
@@ -57,8 +57,8 @@ During the first execution of the firmware, the controller scans the 1-Wire netw
 
 ## Repository Contents
 
-- **picapot-controller-328.ino** — Firmware source code
-- **picapot-controller-328.ino.hex** — Precompiled firmware for 128×64 SPI OLED displays based on SSD1306 and SSD1309 controllers
+- **picapot-controller-ht328.ino** — Firmware source code
+- **picapot-controller-ht328.ino.hex** — Precompiled firmware for 128×64 SPI OLED displays based on SSD1306 and SSD1309 controllers
 
 ## Dependencies
 

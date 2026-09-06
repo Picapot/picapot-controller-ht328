@@ -21,7 +21,6 @@
 #include "SSD1306AsciiSpi.h"      // library for the screen  https://github.com/Picapot/SSD1306Ascii fork of https://github.com/greiman/SSD1306Ascii
 
 // USER SETTINGS ////////////////////////////////////////////////////////
-#define DIAGNOSTIC 0                  // 0 = exclude diagnostic screen 1 = include it
 #define SCREEN_CONTRAST 32            // Range: 0–255
 #define SKIP_ICE 5                    // Skip watering when temperature is below this limit (°C); 0 = disabled
 #define SKIPDAYS_WINTER_PERC 25       // Auto mode: below this %, skip 2 days between waterings and use max 1 watering/day
@@ -201,7 +200,6 @@ dateTime dtm_ds; // datetime of the clock including daylight saving
 dateTime wateringLog[7]; // [0] = last real watering; [1..6] = six most recent watering/skip events
 byte wateringMode, wateringDuration, d2dMode, almInterval, exact1h, daySav, screenSaver, skpHumidity, skpDays, exact2h, exact1m, heatWave, batteryLevel, tempUnit, sensorType; //options variables
 int timezone, latitude, longitude, minDaylightMinutes, maxDaylightMinutes, adjWater, adjWaterResult, exact2m, clockCalibration, heatMultiplier; //options variables
-int InternalVoltage;
 byte manualWateringDuration = 4;
 int temperatureSensorValue, temperatureSensorValueRaw, minTempValue = 850, maxTempValue;
 unsigned int soilSensorValue, soilSensorValueRaw;
@@ -219,7 +217,7 @@ byte sampleCt1=1; // acquired temperature samples
 byte sampleCt2=1; // acquired humidity samples
 byte intervalStartH, intervalStartM, intervalEndH, intervalEndM;
 //The user interface of picapot 328 is organized in 8 screens.
-const byte blinkPosCt[8] = {7, 11, 4, 7, 0, 0, 0, 1}; // total input cells of every screen, some screens have no edit mode and are set to zero.
+const byte blinkPosCt[7] = {7, 11, 4, 7, 0, 0, 1}; // total input cells of every screen, some screens have no edit mode and are set to zero.
 byte calibration[30] = {0}; // clock calibration 240 bit array
 const int8_t wateringDDAdjust[4] = {6, 12, 18, 24}; // values in minutes*10 of the dusk2dawn watering option
 bool blinkStatus = false; // this value is switched every BLINK_FREQ
@@ -312,14 +310,13 @@ const char sysmsg27[] PROGMEM = "0SCHEDULE";
 const char sysmsg28[] PROGMEM = "0LOCATION";
 const char sysmsg29[] PROGMEM = "0OPTIONS";
 const char sysmsg30[] PROGMEM = "0EVENTS";
-const char sysmsg31[] PROGMEM = "0DIAGNOSTIC";
-const char sysmsg32[] PROGMEM = "0SENSOR";
-const char sysmsg33[] PROGMEM = "0MANUAL";
-const char sysmsg34[] PROGMEM = "5SELECT]DURATION";
-const char sysmsg35[] PROGMEM = "6HOLD]LEFT]BUTTON";
-const char sysmsg36[] PROGMEM = "7WWW.PICAPOT.COM";
-const char sysmsg37[] PROGMEM = "0]]]]]SKIP (DOUBLE)";
-const char *const sysmsg[] PROGMEM = {sysmsg00, sysmsg01, sysmsg02, sysmsg03, sysmsg04, sysmsg05, sysmsg06, sysmsg07, sysmsg08, sysmsg09, sysmsg10, sysmsg11, sysmsg12, sysmsg13, sysmsg14, sysmsg15, sysmsg16, sysmsg17, sysmsg18, sysmsg19, sysmsg20, sysmsg21, sysmsg22, sysmsg23, sysmsg24, sysmsg25, sysmsg26, sysmsg27, sysmsg28, sysmsg29, sysmsg30, sysmsg31, sysmsg32, sysmsg33, sysmsg34, sysmsg35, sysmsg36, sysmsg37};
+const char sysmsg31[] PROGMEM = "0SENSOR";
+const char sysmsg32[] PROGMEM = "0MANUAL";
+const char sysmsg33[] PROGMEM = "5SELECT]DURATION";
+const char sysmsg34[] PROGMEM = "6HOLD]LEFT]BUTTON";
+const char sysmsg35[] PROGMEM = "7   WWW.PICAPOT.COM";
+const char sysmsg36[] PROGMEM = "0]]]]]SKIP (DOUBLE)";
+const char *const sysmsg[] PROGMEM = {sysmsg00, sysmsg01, sysmsg02, sysmsg03, sysmsg04, sysmsg05, sysmsg06, sysmsg07, sysmsg08, sysmsg09, sysmsg10, sysmsg11, sysmsg12, sysmsg13, sysmsg14, sysmsg15, sysmsg16, sysmsg17, sysmsg18, sysmsg19, sysmsg20, sysmsg21, sysmsg22, sysmsg23, sysmsg24, sysmsg25, sysmsg26, sysmsg27, sysmsg28, sysmsg29, sysmsg30, sysmsg31, sysmsg32, sysmsg33, sysmsg34, sysmsg35, sysmsg36};
 
 // GLOBAL CLASSES ////////////////////////////////////////////////////////
 SSD1306AsciiSpi Screen;   // create an instance of the SPI screen class
@@ -408,6 +405,7 @@ void setup() {
         memcpy_P(tmp, defSettings, SETTINGS_COUNT);
         UploadSettings(tmp);
         dtm.year = 26; // RTC default date is 1 Jan 2026; year 0 is reserved for empty log entries.
+        dtm.dow = 5; // Thursday, 1 January 2026 (1 = Sunday).
         SetDateTime(dtm);
         for (byte x = 0; x <= SETTINGS_COUNT; x++ ) { //delete the eeprom backup
             EEPROM.write(100+x, 255);
@@ -439,7 +437,6 @@ void setup() {
   maxHumDateTime.year = 20;  
   CreateCalibrationMatrix(); // Initialize the array of the Clock calibration functionality
   //adjWaterResult=50;
-  InternalVoltage = readVcc();  
   printMsg(1); //MEM OK
   delay(300);
   ActivateClockOscillator(); //activate the clock oscillator
@@ -689,7 +686,6 @@ void loop()
         CalculateNextWatering();
         SaveSettings(false);
         // refresh battery level
-        InternalVoltage = readVcc();
         batteryLevel = getBatteryLevel();
         //delete skip message
         if (activeScreen==1 & AlmTrig == 0)
@@ -699,9 +695,8 @@ void loop()
       } 
       else
       {
-        if (activeScreen == 7)
+        if (activeScreen == 6)
         {
-          InternalVoltage = readVcc();
           batteryLevel = getBatteryLevel();
         }
       }        // end of clock calibration
@@ -711,11 +706,12 @@ void loop()
       sleepCt++;
     }
     CheckWaterings(); // check if there is a watering to switch ON
-    SwitchOffWatering(); // check if there is a watering to switch OFF
     if (editMode == false) { // screen is refreshed every interrupt if not in edit mode
       refreshNow = true;
     }
   } // end of interrupts processing
+
+  SwitchOffWatering(); // check the watering timeout every loop, even if RTC interrupts stop
   
   if (sleepCt > (screenSaver*60)) { // Switch off the screen after n seconds of inactivity
     screenSleep = true;
@@ -993,7 +989,13 @@ void CheckWaterings() {
 
     if (!skipDoubleWatering) // in auto mode, WT2 may be suppressed according to season and today's maximum temperature
     {
-      if (!(isD2D && daysSinceLastWatering == 0 && secDif < 900)) // In D2D mode, prevent repeated triggers caused by very short watering durations.
+      // Fixed mode: prevent repeating the last automatic watering in the same local minute.
+      bool repeatedFixed = wateringMode == 1 &&
+                           daysSinceLastWatering == 0 &&
+                           wateringLog[0].hour == dtm_ds.hour &&
+                           wateringLog[0].minute == dtm_ds.minute;
+      if (!repeatedFixed &&
+          !(isD2D && daysSinceLastWatering == 0 && secDif < 900)) // Keep the D2D repeat protection unchanged.
       { 
         if ((wateringMode == 4) || ((wateringMode == 1 || wateringMode == 3) && (skpDays == 0)) || (daysToSkip <= daysSinceLastWatering)) // skip days is off, or mode=interval or skip days condition is true
         {
@@ -1044,7 +1046,7 @@ void CheckWaterings() {
     else
     {
       AddLogEvent(LOG_SKIP_DOUBLE, 0);
-      printMsg(37); //SKIP DOUBLE
+      printMsg(36); //SKIP DOUBLE
       FinishSkippedWatering();
     }     
     SaveSettings(false); // watering state and events are stored only in the DS1307 RAM
@@ -1062,7 +1064,8 @@ unsigned long WateringDuration(byte alm)
   else {
     
     t = wateringDurations[wateringDuration]; 
-    t = t * (100+((adjWaterResult * (wateringMode == 2 ? 3 : adjWater) * 50)/100)) * 10; // automatic adjustment of the watering period, if skip watering=auto then water adjust=150%
+    unsigned int seasonIncrease = (1UL * adjWaterResult * (wateringMode == 2 ? 3 : adjWater)) / 2; // *50/100 simplifies to /2; result fits in 16 bits
+    t = t * (100 + seasonIncrease) * 10; // automatic adjustment; auto mode uses +150%
   }
 
   if (heatWave != 0 && alm != 3 && sensorErr == 0) { // if option heat is ON and the limit temperature has been reached, apply the adjustment to the watering period
@@ -1077,6 +1080,7 @@ void SwitchOffWatering() {
   if (AlmTrig == 1 || AlmTrig == 2 || AlmTrig == 3) {
     unsigned long mss = WateringDuration(AlmTrig);
     if ((manualStop) || ((millis() - curAlmDuration) > mss)) { // manual stop or watering elapsed
+      digitalWrite(PIN_OUT, LOW); // close the valve before calculations and settings writes
       bool stoppedManually = manualStop;
       if (stoppedManually) {
         unsigned int elapsedSeconds = (millis() - curAlmDuration) / 1000;
@@ -1096,7 +1100,6 @@ void SwitchOffWatering() {
       if (AlmTrig != 3 || stoppedManually) SaveSettings(false);
       AlmTrig = 0;
       Screen.clear();
-      digitalWrite(PIN_OUT, LOW); // switch-off the gate signal
     }
   }
 }
@@ -1108,7 +1111,7 @@ void CalculateNextWatering() {
   int tmm;
   int mm1, mm2;
   int nowMinutes, startMinutes, intervalMinutes;
-  unsigned long f;
+  long f;
   float tmz = timezone;
   Dusk2Dawn D2D(latitude, longitude, tmz / 4);
   mm1 = D2D.sunrise(dtm.year + 2000, dtm.month, dtm.day, isSummerTime);
@@ -1198,12 +1201,15 @@ void CalculateNextWatering() {
     }
   }
   if (maxDaylightMinutes > minDaylightMinutes) {
-    f = (((mm2 - mm1) - minDaylightMinutes) * 100) / (maxDaylightMinutes - minDaylightMinutes);// seasonal watering adjust
+    f = ((long)mm2 - mm1 - minDaylightMinutes) * 100L
+        / ((long)maxDaylightMinutes - minDaylightMinutes); // seasonal watering adjustment in 32 bits
   }
   else {
     f = 100;
   }
-  adjWaterResult = (byte)(f);
+  if (f < 0) f = 0;
+  if (f > 100) f = 100;
+  adjWaterResult = (int)f;
 }
 
 int StepMenu(int value, int minValue, int maxValue, bool down) {
@@ -1288,11 +1294,6 @@ void ProcessButtons() {
         else {
           activeScreen = activeScreen + ((btn2 == 0) ? -1 : + 1);
         }
-#if DIAGNOSTIC == 0
-        if (activeScreen == 6) {
-          activeScreen = activeScreen + ((btn2 == 0) ? -1 : + 1);
-        }
-#endif
         Screen.clear();
       }
 
@@ -1433,7 +1434,7 @@ void ProcessButtons() {
         }
       }
 
-      else if (activeScreen == 8) { // MANUAL WATERING
+      else if (activeScreen == 7) { // MANUAL WATERING
         bool down = (btn2 == 0);
 
         if (blinkPos == 1) {
@@ -1534,7 +1535,7 @@ void MonitorButtons() {
           getTempSensorAddress();
           CreateCalibrationMatrix();
         }
-        else if (activeScreen == 8 && idleCt < (5600 / EDIT_FREQ)) {// Watering now
+        else if (activeScreen == 7 && idleCt < (5600 / EDIT_FREQ)) {// Watering now
           AlmTrig = 3;
           curAlmDuration = millis(); // this global variable is used to keep track of the seconds elapsed since the last watering was triggered
           AddLogEvent(LOG_MANUAL, WateringDuration(AlmTrig) / 1000); // log manual watering without updating last automatic watering
@@ -1617,7 +1618,6 @@ void PrintScreen(byte scr) {
   const char * tUnit = tempUnit ? "$" : "@";
   int integerPart, decimalPart, integerPart2, decimalPart2;    
   unsigned long scaled;
-  int xtmp;
 
   if (scr == 1) { // MAIN SCREEN  ///////////////////////////////////////////////////////////////////////////////////////////////////
     if (AlmTrig == 1 || AlmTrig == 2 || AlmTrig == 3) // watering is ON
@@ -1645,21 +1645,22 @@ void PrintScreen(byte scr) {
             (blkStatus == true && blinkPos == 2 ? (dtm_ds.day < 10 ? " " : "  ")  : lngToChar(cstr1, dtm_ds.day, false)),
             (blkStatus == true && blinkPos == 3 ? "   "  : months[dtm_ds.month - 1]), (blkStatus == true && blinkPos == 4 ? "  "  : lngToChar(cstr2, dtm_ds.year, true)), "");
       //BATTERY
+ 
       byte batteryPercent = ((int)batteryLevel * 100) / 14;
       byte tick = ((int)batteryLevel * 12) / 14;
-
+	
       cstr5[0] = '"';
       for (byte i = 0; i < 12; i++) {
         cstr5[i + 1] = (i < tick) ? '`' : '_';
       }
       cstr5[13] = ';';
       cstr5[14] = 0;
-      Print(0, 6, false, F(" BAT]&%&^"), lngToChar(cstr1, batteryPercent, false), cstr5, "", "", "");
+	  Print(0, 6, false, F(" &]&%&^"), batteryLevel < 3 && blinkStatus == true ? "   " : "BAT", lngToChar(cstr1, batteryPercent, false), cstr5, "", "");
       //last watering
       if (!isDefaultDateTime(wateringLog[0]))
       {
-        mss=((wateringLog[0].durationHigh*256)+wateringLog[0].durationLow);
-        mss=mss*1000;      
+        mss=((wateringLog[0].durationHigh*256UL)+wateringLog[0].durationLow);
+        mss=mss*1000UL;
         Print(0, 7, false, wateringLog[0].day < 10 ? F("][*]&[[&]&:&](&)") : F("[[*]&[[&]&:&](&)"), lngToChar(cstr1, wateringLog[0].day, false), months[wateringLog[0].month - 1], lngToChar(cstr2, wateringLog[0].hour, true), lngToChar(cstr3, wateringLog[0].minute, true), msToChar(cstr4, mss));
       }
       
@@ -1667,18 +1668,15 @@ void PrintScreen(byte scr) {
 
 
     //temp & moist
-    xtmp=Cel2Fah(temperatureSensorValue);
-    integerPart = xtmp / 10;
-    decimalPart = xtmp % 10;
     scaled = Moist(soilSensorValue);
     integerPart2 = scaled / 10;    
     decimalPart2 = scaled % 10; 
-    Print(0, 4, false, F(" [[[TMP]&.&& MST]&.&%^"), sensorErr < 1 ? lngToChar(cstr1, integerPart, false) : "--", sensorErr < 1 ? lngToChar(cstr2, decimalPart, false) : "-", tUnit, isHumPresent ? lngToChar(cstr3, integerPart2, false) : "--", isHumPresent ? lngToChar(cstr4, decimalPart2, false) : "-");
+    Print(0, 4, false, F(" [[[TMP]&& MST]&.&%^"), sensorErr < 1 ? formatTemperature(cstr1, Cel2Fah(temperatureSensorValue)) : "--.-", tUnit, isHumPresent ? lngToChar(cstr3, integerPart2, false) : "--", isHumPresent ? lngToChar(cstr4, decimalPart2, false) : "-", "");
 
-    //low rtc level
-    if (batteryLevel < 3){
-        PrintShort(0, 5, false, F("    &^"), blinkStatus == true && AlmTrig == 0 ? "RTC BAT LOW!!" : "             ");
-    }
+
+    // Optional sensor diagnostics on Time screen (row 6 replaces battery/time-left when enabled).
+    // Print(0, 5, false, F("IN=& EX=& ER=& CT=&^"), lngToChar(cstr1, intSensorIdx, false), lngToChar(cstr2, extSensorIdx, false), lngToChar(cstr3, sensorErr, false), lngToChar(cstr4, sensorCount, false), "");
+    // Print(0, 6, false, F("I=& 0=& 1=&^"), addrToHex(cstr1, internalSensorAddress), addrToHex(cstr2, temperatureSensorAddress[0]), addrToHex(cstr3, temperatureSensorAddress[1]), "", "");
 
     //time
     Screen.setFont(lucida10x14);
@@ -1765,8 +1763,8 @@ void PrintScreen(byte scr) {
           (latitude > -10 && latitude < 10) ? " " : "" , "", "");
     Print(0, 5, false, (blkStatus == true && blinkPos == 4) ? F("LONGITUDE= ^") : F("LONGITUDE= &&^"), (longitude > -1 ? "+" : ""),
           lngToChar(cstr1, longitude, false), "", "", "");
-    //Removing the link below, from all the application screens, violates the license.
-	printMsg(36); //www.picapot.com
+    PrintShort(0, 6, false, F("SEASON= &%^"), lngToChar(cstr1, adjWaterResult, false));
+
 		  
   }  
   
@@ -1835,64 +1833,14 @@ void PrintScreen(byte scr) {
     }
   }
 
-#if DIAGNOSTIC == 1
-  else if (scr == 6) { // DIAGNOSTIC //////////////////////////////////////////////////////////////////////////////////////////////////
-    printMsg(31); //DIAGNOSTIC^
-    PrintUnderline();
-    Print(0, 2, false, F("V=& B=&^"), lngToChar(cstr1, InternalVoltage, false), lngToChar(cstr2, getBatteryMillivolts(), false), "", "", "");
-    int effDaysToSkip;
-    bool autoSkipDays = wateringMode == 2 || skpDays == 1;
-    bool isMidSeason = adjWaterResult >= SKIPDAYS_EARLY_SPRING_PERC && adjWaterResult < SKIPDAYS_LATE_SPRING_PERC;
-    bool validTodayMaxTemp = sensorErr == 0 && dateDiff(maxTempDateTime, dtm_ds) == 0;
-    bool skipWt2ForTemperature = isMidSeason && validTodayMaxTemp && maxTempValue < (DOUBLE_WATERING_TEMP * 10);
-    bool autoSkipSecondWatering = autoSkipDays && (adjWaterResult < SKIPDAYS_EARLY_SPRING_PERC || skipWt2ForTemperature);
-    if (autoSkipDays) {
-        effDaysToSkip = (adjWaterResult < SKIPDAYS_WINTER_PERC) ? 3 :
-                      (adjWaterResult < SKIPDAYS_EARLY_SPRING_PERC) ? 2 :
-                      (adjWaterResult < SKIPDAYS_LATE_SPRING_PERC) ? 0 : 0;
-    }
-    else
-    {
-      effDaysToSkip = skpDays;    
-    }
-    byte wt = 0;
-    if (wateringMode == 1)
-    {
-      wt = (alm1Time.hour != 24) + ((alm2Time.hour != 24) << 1);
-      if (wt == 3 && autoSkipSecondWatering) wt = 1;
-    }
-    else if (wateringMode == 2)
-    {
-      wt = autoSkipSecondWatering ? 1 : 3;
-    }
-    else if (wateringMode == 3)
-    {
-      wt = autoSkipSecondWatering ? 1 : 3;
-    }
-    Print(0, 3, false, F("SK=& WT=& SE=&%^"), lngToChar(cstr1, effDaysToSkip > 1 ? (effDaysToSkip - 1) : 0, false), wt==0 ? "NONE" : (wt==1 ? "W1" : (wt==2 ? "W2" : "W1+W2")), lngToChar(cstr2, adjWaterResult, false), "", "");
-    Print(0, 4, false, F("W1=&:& W2=&:&^"), lngToChar(cstr1, alm1Time.hour, true), lngToChar(cstr2, alm1Time.minute, true), lngToChar(cstr3, alm2Time.hour, true), lngToChar(cstr4, alm2Time.minute, true), "");
-    Print(0, 5, false, F("IN=& EX=& ER=& CT=&^"), lngToChar(cstr1, intSensorIdx, false), lngToChar(cstr2, extSensorIdx, false), lngToChar(cstr3, sensorErr, false), lngToChar(cstr4, sensorCount, false), "");     
-    Print(0, 6, false, F("I=& 0=& 1=&^"), addrToHex(cstr1, internalSensorAddress), addrToHex(cstr2, temperatureSensorAddress[0]), addrToHex(cstr3, temperatureSensorAddress[1]), "", "");
-    
-  }
-#endif
 
-  else if (scr == 7) { // SENSOR ///////////////////////////////////////////////////////////////////////////////////////////////////
-    printMsg(32); //SENSOR^
+  else if (scr == 6) { // SENSOR ///////////////////////////////////////////////////////////////////////////////////////////////////
+    printMsg(31); //SENSOR^
     PrintUnderline();
 
-    xtmp=Cel2Fah(temperatureSensorValue);
-    integerPart = xtmp / 10;
-    decimalPart = xtmp % 10;    
-    Print(0, 2, false, F("TEMPERATURE:&.&&^"), sensorErr == 0 ? lngToChar(cstr1, integerPart, false) : "--", sensorErr == 0 ? lngToChar(cstr2, decimalPart, false) : "-", tUnit, "", "");
-    xtmp=Cel2Fah(maxTempValue);
-    integerPart = xtmp / 10;
-    decimalPart = xtmp % 10;    
-    Print(0, 3, false, F("]']&.&&]&:&^"), lngToChar(cstr1, integerPart, false), lngToChar(cstr2, decimalPart, false), tUnit, lngToChar(cstr3, maxTempDateTime.hour, true), lngToChar(cstr4, maxTempDateTime.minute, true));
-    xtmp=Cel2Fah(minTempValue);
-    integerPart = xtmp / 10;
-    decimalPart = xtmp % 10;    
-    Print(0, 4, false, F("],]&.&&]&:&^"), lngToChar(cstr1, integerPart, false), lngToChar(cstr2, decimalPart, false), tUnit, lngToChar(cstr3, minTempDateTime.hour, true), lngToChar(cstr4, minTempDateTime.minute, true));
+    Print(0, 2, false, F("TEMPERATURE:&&^"), sensorErr == 0 ? formatTemperature(cstr1, Cel2Fah(temperatureSensorValue)) : "--.-", tUnit, "", "", "");
+    Print(0, 3, false, F("]']&&]&:&^"), formatTemperature(cstr1, Cel2Fah(maxTempValue)), tUnit, lngToChar(cstr3, maxTempDateTime.hour, true), lngToChar(cstr4, maxTempDateTime.minute, true), "");
+    Print(0, 4, false, F("],]&&]&:&^"), formatTemperature(cstr1, Cel2Fah(minTempValue)), tUnit, lngToChar(cstr3, minTempDateTime.hour, true), lngToChar(cstr4, minTempDateTime.minute, true), "");
 
     scaled = Moist(soilSensorValue); 
     integerPart = scaled / 10;    
@@ -1917,13 +1865,14 @@ void PrintScreen(byte scr) {
 
 
 
-  else if (scr == 8) { // MANUAL WATERING ///////////////////////////////////////////////////////////////////////////////////////////////////
-    printMsg(33); //MANUAL^
+  else if (scr == 7) { // MANUAL WATERING ///////////////////////////////////////////////////////////////////////////////////////////////////
+    printMsg(32); //MANUAL^
     PrintUnderline();
     PrintShort(0, 2, false, F("DURATION= &^"), (blkStatus == true && blinkPos == 1 ? ""  : getAlmDurOpt(manualWateringDuration, cstr1)));
-    printMsg(34); //Select]duration^
-    printMsg(35); //Hold]LEFT]button^
-	
+    printMsg(33); //Select]duration^
+    printMsg(34); //Hold]LEFT]button^
+	//Removing the link below, from all the application screens, violates the license.
+	printMsg(35); //www.picapot.com
   }
 }
 
@@ -2001,24 +1950,11 @@ unsigned int Moist(unsigned int i) {
 
 
 
-int readVcc() {
-  ADMUX = _BV(REFS0) | _BV(MUX3) | _BV(MUX2) | _BV(MUX1);
-  delay(2);
-  ADCSRA |= _BV(ADSC);
-  while (bit_is_set(ADCSRA, ADSC)); //first sample is discarded
-  ADCSRA |= _BV(ADSC); 
-  while (bit_is_set(ADCSRA,ADSC));  
-  return 1126400L / ADC;  
-}
-
-
-
 int getBatteryMillivolts() {
-  unsigned long f = analogRead(PIN_BAT_CHECK); //first sample is discarded
+  analogRead(PIN_BAT_CHECK); // first sample is discarded
   delay(1);
-  f = analogRead(PIN_BAT_CHECK);
-  f = f * InternalVoltage;
-  return int(f / 1024);
+  unsigned long sample = analogRead(PIN_BAT_CHECK);
+  return (sample * 5000UL) / 1024; // DEFAULT analog reference; assume a regulated 5 V supply
 }
 
 
@@ -2243,7 +2179,12 @@ void DownloadSettings(byte* data) {
   }
   else
   {
-    Wire.requestFrom(CLOCK_ADDRESS, 32);
+    if (Wire.requestFrom(CLOCK_ADDRESS, 32) != 32) {
+      digitalWrite(PIN_OUT, LOW);
+      digitalWrite(PIN_LED, HIGH);
+      printMsg(15); // ER2: incomplete settings read
+      while (true) {} // wait for the watchdog reset
+    }
     while (Wire.available()) {
       data[x] = Wire.read();
       x++;
@@ -2258,7 +2199,12 @@ void DownloadSettings(byte* data) {
   }
   else
   {
-    Wire.requestFrom(CLOCK_ADDRESS, SETTINGS_COUNT-31);
+    if (Wire.requestFrom(CLOCK_ADDRESS, SETTINGS_COUNT-31) != SETTINGS_COUNT-31) {
+      digitalWrite(PIN_OUT, LOW);
+      digitalWrite(PIN_LED, HIGH);
+      printMsg(15); // ER2: incomplete settings read
+      while (true) {} // wait for the watchdog reset
+    }
     while (Wire.available()) {
       data[x] = Wire.read();
       x++;
@@ -2301,33 +2247,49 @@ uint8_t bcd2dec(uint8_t num) { // Convert Binary Coded Decimal (BCD) to Decimal
 dateTime GetDateTime() { // Read date and time from the clock. The values are stored in the clock registry with a binary encoded decimal format, and they must be converted to decimal
   Wire.beginTransmission(CLOCK_ADDRESS);
   Wire.write((uint8_t)0x00);
-  if (Wire.endTransmission() != 0) {
-    digitalWrite(PIN_LED, HIGH);
-    printMsg(24); //ER3
-    while (1) {}; // without clock the system cannot proceed and will reset until a working clock will be found
-  }
-  else
-  {
+  if (Wire.endTransmission() == 0 &&
+      Wire.requestFrom(CLOCK_ADDRESS, 7) == 7) {
     dateTime res;
-    byte rdata = 0x00;
-    Wire.requestFrom(CLOCK_ADDRESS, 7);
-    if (Wire.available()) rdata = Wire.read();
-    res.second = bcd2dec(rdata & 0x7f);
-    if (Wire.available()) rdata = Wire.read();
-    res.minute = bcd2dec(rdata);
-    if (Wire.available()) rdata = Wire.read();
-    res.hour = bcd2dec(rdata & 0x3f);
-    if (Wire.available()) rdata = Wire.read();
-    res.dow = bcd2dec(rdata);
-    if (Wire.available()) rdata = Wire.read();
-    res.day = bcd2dec(rdata);
-    if (Wire.available()) rdata = Wire.read();
-    res.month = bcd2dec(rdata);
-    if (Wire.available()) rdata = Wire.read();
-    res.year = bcd2dec(rdata);
-    return res;
+    res.second = bcd2dec(Wire.read() & 0x7f);
+    res.minute = bcd2dec(Wire.read());
+    res.hour   = bcd2dec(Wire.read() & 0x3f);
+    res.dow    = bcd2dec(Wire.read());
+    res.day    = bcd2dec(Wire.read());
+    res.month  = bcd2dec(Wire.read());
+    res.year   = bcd2dec(Wire.read());
+
+    if (res.second <= 59 &&
+        res.minute <= 59 &&
+        res.hour <= 23 &&
+        res.dow >= 1 && res.dow <= 7 &&
+        res.month >= 1 && res.month <= 12 &&
+        res.day >= 1 && res.day <= 31 &&
+        res.year <= 99) {
+      return res;
+    }
+
+    // Complete read with invalid fields: disable watering before repairing the RTC.
+    digitalWrite(PIN_OUT, LOW);
+    wateringMode = 0;
+    SaveSettings(false);
+
+    dateTime fallback;
+    fallback.second = 0;
+    fallback.minute = 0;
+    fallback.hour = 0;
+    fallback.dow = 7; // Saturday, 1 January 2000 (1 = Sunday).
+    fallback.day = 1;
+    fallback.month = 1;
+    fallback.year = 0;
+    SetDateTime(fallback);
   }
-  delay(SYSTEM_DELAY);
+
+  digitalWrite(PIN_OUT, LOW); // close the valve immediately on invalid or incomplete RTC data
+  digitalWrite(PIN_LED, HIGH);
+  printMsg(24); // ER3
+  while (true) {
+    // Wait for the watchdog reset without reloading it.
+  }
 }
 
 void SetDateTime(dateTime val) { // Write date and time to the clock. Values must be saved to the clock with a binary encoded decimal format.
@@ -2488,6 +2450,21 @@ int Cel2Fah(int cel)
   if (!tempUnit) return cel;
 
   return (cel * 9) / 5 + 320;
+}
+
+char* formatTemperature(char* dest, int tenths) {
+  char* p = dest;
+  long value = tenths;
+  if (value < 0) {
+    *p++ = '-';
+    value = -value;
+  }
+  lngToChar(p, value / 10, false);
+  while (*p) p++;
+  *p++ = '.';
+  *p++ = '0' + (value % 10);
+  *p = '\0';
+  return dest;
 }
 
 char* getAlmDurOpt(byte idx, char* dest) {
